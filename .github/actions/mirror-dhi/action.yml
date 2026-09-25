@@ -1,0 +1,50 @@
+name: 'mirror-dhi'
+description: 'Mirror an image from dhi.io to docker.io'
+inputs:
+  dhi-tag:
+    description: 'name and tag at dhi.io, for example eclipse-temurin:25-alpine'
+    required: true
+  docker-tag:
+    description: 'name and tag at docker.io, for example folioci/eclipse-temurin:25-alpine'
+    required: true
+  dockerhub-username:
+    required: true
+  dockerhub-token:
+    required: true
+runs:
+  using: composite
+  steps:
+
+    - name: login at dhi.io and docker.io
+      env:
+        DOCKERHUB_USERNAME: ${{ inputs.dockerhub-username }}
+        DOCKERHUB_TOKEN: ${{ inputs.dockerhub-token }}
+      shell: sh
+      run: |
+        printf '%s' "$DOCKERHUB_TOKEN" | docker login -u "$DOCKERHUB_USERNAME" --password-stdin dhi.io
+        printf '%s' "$DOCKERHUB_TOKEN" | docker login -u "$DOCKERHUB_USERNAME" --password-stdin docker.io
+
+    - name: fetch layer hashes, copy if needed
+      env:
+        DHITAG: ${{ inputs.dhi-tag }}
+        DOCKERTAG: ${{ inputs.docker-tag }}
+      shell: sh
+      run: |
+        skopeo inspect --format '{{ .Layers }}' --override-arch arm64 "docker://dhi.io/$DHITAG" | tee dhi-layers
+        skopeo inspect --format '{{ .Layers }}' --override-arch amd64 "docker://dhi.io/$DHITAG" | tee -a dhi-layers
+        skopeo inspect --format '{{ .Layers }}' --override-arch arm64 "docker://docker.io/$DOCKERTAG" | tee docker-layers
+        skopeo inspect --format '{{ .Layers }}' --override-arch amd64 "docker://docker.io/$DOCKERTAG" | tee -a docker-layers
+
+        if diff dhi-layers docker-layers > /dev/null; then
+          echo 'no change'
+          exit 0
+        fi
+
+        echo "mark old images for deletion, ignore error if $DOCKERTAG doesn't exist"
+        skopeo copy --all "docker://docker.io/$DOCKERTAG" "docker://docker.io/$DOCKERTAG-for-deletion" || true
+
+        echo "copy from dhi to docker.io"
+        skopeo copy --all "docker://dhi.io/$DHITAG" "docker://docker.io/$DOCKERTAG"
+
+        echo "delete old images, ignore if they don't exist"
+        skopeo delete "docker://docker.io/$DOCKERTAG-for-deletion" || true
