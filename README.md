@@ -1,4 +1,4 @@
-# mod-users-keycloak
+# folio-dhi
 
 Copyright (C) 2026 The Open Library Foundation
 
