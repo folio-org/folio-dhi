@@ -1,4 +1,4 @@
-name: eclipse-temurin-25-alpine
+name: eclipse-temurin-25-alpine-dev
 on:
   schedule:
     - cron: '29 3 * * *'
